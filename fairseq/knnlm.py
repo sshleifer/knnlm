@@ -5,6 +5,11 @@ import numpy as np
 from fairseq import utils
 import time
 from fairseq.data import Dictionary
+#from durbango import *
+
+def time_index_stuff():
+    pass
+
 
 class KNN_Dstore(object):
     def __init__(self, args):
@@ -17,13 +22,16 @@ class KNN_Dstore(object):
         self.dstore_fp16 = args.dstore_fp16
         self.index = self.setup_faiss(args)
 
-
     def setup_faiss(self, args):
         if not args.dstore_filename:
             raise ValueError('Cannot build a datastore without the data.')
 
         start = time.time()
+        res = faiss.StandardGpuResources()  # use a single GPU
+
         index = faiss.read_index(args.indexfile, faiss.IO_FLAG_ONDISK_SAME_DIR)
+        # faiss.index_cpu_to_all_gpus
+        index = faiss.index_cpu_to_gpus_list(index)
         print('Reading datastore took {} s'.format(time.time() - start))
         index.nprobe = args.probe
 
@@ -56,17 +64,30 @@ class KNN_Dstore(object):
             self.vals = np.zeros((self.dstore_size, 1), dtype=np.int16 if args.dstore_fp16 else np.int)
             self.vals = self.vals_from_memmap[:]
             self.vals = self.vals.astype(np.int16 if args.dstore_fp16 else np.int)
-            print('Loading to memory took {} s'.format(time.time() - start))
+            #print('Loading to memory took {} s'.format(time.time() - start))
 
         return index
 
 
     def get_knns(self, queries):
-        dists, knns = self.index.search(queries.detach().cpu().float().numpy(), self.k)
+        
+        qcast = queries.detach().cpu().float().numpy()
+        start = time.time()
+        dists, knns = self.index.search(qcast, self.k)
+        #print(f'search took: {time.time()-start:.3f} seconds')
         return dists, knns
 
 
     def get_knn_log_prob(self, queries, tgt, pad_idx):
+        #import ipdb; ipdb.set_trace()
+        def recompute_l2(d, k, q, qsize):
+            knns_vecs = torch.from_numpy(self.keys[k]).cuda().view(qsize[0], self.k, -1)
+            if self.half:
+                knns_vecs = knns_vecs.half()
+            query_vecs = q.view(qsize[0], 1, qsize[1]).repeat(1, self.k, 1)
+            l2 = torch.sum((query_vecs - knns_vecs.detach())**2, dim=2)
+            return l2
+
         def dist_func(d, k, q, function=None):
             if not function:
                 # Default behavior for L2 metric is to recompute distances.
@@ -74,11 +95,8 @@ class KNN_Dstore(object):
                 qsize = q.shape
                 if self.metric_type == 'l2':
                     start = time.time()
-                    knns_vecs = torch.from_numpy(self.keys[k]).cuda().view(qsize[0], self.k, -1)
-                    if self.half:
-                        knns_vecs = knns_vecs.half()
-                    query_vecs = q.view(qsize[0], 1, qsize[1]).repeat(1, self.k, 1)
-                    l2 = torch.sum((query_vecs - knns_vecs.detach())**2, dim=2)
+                    l2 = d.recompute_l2(k, q, qsize)
+                    #print(f'computed l2 in {time.time()-start}')
                     return -1 * l2
                 return d
 
@@ -90,6 +108,7 @@ class KNN_Dstore(object):
                 return -1 * d
 
             raise ValueError("Invalid knn similarity function!")
+
 
         # queries  are TxBxC
         # reshape: (TxB)xC
