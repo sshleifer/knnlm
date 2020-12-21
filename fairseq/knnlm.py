@@ -62,7 +62,6 @@ class KNN_Dstore(object):
 
 
     def get_knns(self, queries):
-        start = time.time()
         dists, knns = self.index.search(queries.detach().cpu().float().numpy(), self.k)
         return dists, knns
 
@@ -110,7 +109,7 @@ class KNN_Dstore(object):
 
         # (T_reducedxB)
         yhat_knn_prob = torch.logsumexp(probs + index_mask, dim=-1).clone()
-        full_yhat_knn_prob = torch.full([qshape[0]*qshape[1]], -10000).cuda()
+        full_yhat_knn_prob = torch.full([qshape[0]*qshape[1]], -10000, dtype=yhat_knn_prob.dtype,device=yhat_knn_prob.device)
         full_yhat_knn_prob[tgt != pad_idx] = yhat_knn_prob
 
         # TxBx1

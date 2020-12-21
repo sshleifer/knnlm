@@ -32,8 +32,7 @@ else:
 if not os.path.exists(args.faiss_index+".trained"):
     # Initialize faiss index
     quantizer = faiss.IndexFlatL2(args.dimension)
-    index = faiss.IndexIVFPQ(quantizer, args.dimension,
-        args.ncentroids, args.code_size, 8)
+    index = faiss.IndexIVFPQ(quantizer, args.dimension, args.ncentroids, args.code_size, 8)
     index.nprobe = args.probe
 
     print('Training Index')

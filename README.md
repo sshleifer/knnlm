@@ -70,7 +70,7 @@ This model was trained on 8 gpus.
 To evaluate the model on the validation set:
 
 ```bash
-python eval_lm.py data-bin/wikitext-103 \
+python eval_lm.py $wikitext \
     --path checkpoints/checkpoint_best.pt \
     --sample-break-mode complete --max-tokens 3072 \
     --context-window 2560 --softmax-batch 1024 \
