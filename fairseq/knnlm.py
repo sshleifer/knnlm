@@ -29,6 +29,7 @@ class KNN_Dstore(object):
         start = time.time()
         res = faiss.StandardGpuResources()  # use a single GPU
         co = faiss.GpuClonerOptions()
+        co.useFloat16 = True
         co.useFloat16LookupTables = True
 
         index = faiss.read_index(args.indexfile, faiss.IO_FLAG_ONDISK_SAME_DIR)
@@ -96,15 +97,14 @@ class KNN_Dstore(object):
                 # Default behavior for IP metric is to return faiss distances.
                 qsize = q.shape
                 if self.metric_type == 'l2':
-                    start = time.time()
-                    l2 = d.recompute_l2(k, q, qsize)
+                    l2 = recompute_l2(d, k, q, qsize)
                     #print(f'computed l2 in {time.time()-start}')
                     return -1 * l2
                 return d
 
             if function == 'dot':
                 qsize = q.shape
-                return (torch.from_numpy(self.keys[k]).cuda() * q.view(qsize[0], 1, qsize[1])).sum(dim=-1)
+                return (torch.from_numpy(self.keys[k])  .cuda() * q.view(qsize[0], 1, qsize[1])).sum(dim=-1)
 
             if function == 'do_not_recomp_l2':
                 return -1 * d

@@ -90,7 +90,6 @@ class SequenceScorer(object):
                 sample['target'] = orig_target
 
             probs = probs.view(sample['target'].shape)
-            print('Done normal generation')
             if 'knn_dstore' in kwargs:
                 dstore = kwargs['knn_dstore']
                 # TxBxC
