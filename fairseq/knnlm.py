@@ -7,9 +7,6 @@ import time
 from fairseq.data import Dictionary
 #from durbango import *
 
-def time_index_stuff():
-    pass
-
 
 class KNN_Dstore(object):
     def __init__(self, args):

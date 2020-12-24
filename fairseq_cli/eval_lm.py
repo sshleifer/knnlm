@@ -264,6 +264,8 @@ def main(parsed_args):
 
             wps_meter.update(sample['ntokens'])
             t.log({'wps': round(wps_meter.avg)})
+            print(f'dstore_idx:{dstore_idx}')
+        print(f'final dstore idx: {dstore_idx}')
 
     if args.save_knnlm_dstore:
         print("dstore_idx", dstore_idx, "final shape", shape)
