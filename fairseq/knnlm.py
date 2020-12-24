@@ -70,21 +70,21 @@ class KNN_Dstore:
 
 
     def get_knns(self, queries):
-        
         qcast = queries.detach().cpu().float().numpy()
-        start = time.time()
+        # Note(SS): search only takes numpy array
         dists, knns = self.index.search(qcast, self.k)
-        #print(f'search took: {time.time()-start:.3f} seconds')
         return dists, knns
 
 
     def get_knn_log_prob(self, queries, tgt, pad_idx):
+        """Equation 2, page 2 in paper. prob = softmax over vocab, sum(1/D[k] for k in neighbors)"""
         #import ipdb; ipdb.set_trace()
         def recompute_l2(d, k, q, qsize):
             knns_vecs = torch.from_numpy(self.keys[k]).cuda().view(qsize[0], self.k, -1)
             if self.half:
                 knns_vecs = knns_vecs.half()
             query_vecs = q.view(qsize[0], 1, qsize[1]).repeat(1, self.k, 1)
+            # TODO(SS): do this with broadcasting
             l2 = torch.sum((query_vecs - knns_vecs.detach())**2, dim=2)
             return l2
 
@@ -101,7 +101,7 @@ class KNN_Dstore:
 
             if function == 'dot':
                 qsize = q.shape
-                return (torch.from_numpy(self.keys[k])  .cuda() * q.view(qsize[0], 1, qsize[1])).sum(dim=-1)
+                return (torch.from_numpy(self.keys[k]).cuda() * q.view(qsize[0], 1, qsize[1])).sum(dim=-1)
 
             if function == 'do_not_recomp_l2':
                 return -1 * d
@@ -120,14 +120,16 @@ class KNN_Dstore:
         start = time.time()
         dists = dist_func(dists, knns, queries[tgt != pad_idx, :], function=self.sim_func)
         probs = utils.log_softmax(dists, dim=-1)
+        # Probs
 
-        index_mask = torch.eq(torch.from_numpy(self.vals[knns]).long().cuda().squeeze(-1), tgt[tgt != pad_idx].unsqueeze(-1)).float()
-        index_mask[index_mask == 0] = -10000 # for stability
-        index_mask[index_mask == 1] = 0
+        vals = torch.from_numpy(self.vals[knns]).long().cuda().squeeze(-1)
+        val_eq_tgt_mask = torch.eq(vals, tgt[tgt != pad_idx].unsqueeze(-1)).float()
+        val_eq_tgt_mask[val_eq_tgt_mask == 0] = -10000 # for stability
+        val_eq_tgt_mask[val_eq_tgt_mask == 1] = 0
 
         # (T_reducedxB)
-        yhat_knn_prob = torch.logsumexp(probs + index_mask, dim=-1).clone()
-        full_yhat_knn_prob = torch.full([qshape[0]*qshape[1]], -10000, dtype=yhat_knn_prob.dtype,device=yhat_knn_prob.device)
+        yhat_knn_prob = torch.logsumexp(probs + val_eq_tgt_mask, dim=-1).clone()
+        full_yhat_knn_prob = yhat_knn_prob.new_full([qshape[0]*qshape[1]], -10000)
         full_yhat_knn_prob[tgt != pad_idx] = yhat_knn_prob
 
         # TxBx1

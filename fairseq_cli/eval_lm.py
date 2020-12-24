@@ -195,7 +195,7 @@ def main(parsed_args):
                             dk = dk[:num_to_add]
                             dv = dv[:num_to_add]
                             end_idx = num_to_add+dstore_idx  # should be dstore_size
-                        dstore_keys[dstore_idx:end_idx] = dk.view(-1, args.decoder_embed_dim).cpu().numpy().astype(np_dtypes[0])
+                        keys_to_add = dk.view(-1, args.decoder_embed_dim).cpu().numpy().astype(np_dtypes[0])
                         dstore_vals[dstore_idx:end_idx] = dv.view(-1, 1).cpu().numpy().astype(np_dtypes[1])
                         dstore_idx += num_to_add
                     else:
