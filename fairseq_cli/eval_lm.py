@@ -165,11 +165,13 @@ def main(parsed_args):
                 print('Saving fp32')
                 dstore_keys = np.memmap(args.dstore_mmap+'_keys.npy', dtype=np.float32, mode='w+', shape=(args.dstore_size, args.decoder_embed_dim))
                 dstore_vals = np.memmap(args.dstore_mmap+'_vals.npy', dtype=np.int, mode='w+', shape=(args.dstore_size, 1))
-
+        np_dtypes = (np.float16, np.int16) if args.dstore_fp16 else (np.float32, np.int)
         dstore_idx = 0
         for ex_i, sample in enumerate(t):
             if 'net_input' not in sample:
                 continue
+            elif args.save_knnlm_dstore and dstore_idx >= args.dstore_size:
+                break
 
             sample = utils.move_to_cuda(sample) if use_cuda else sample
 
@@ -182,26 +184,22 @@ def main(parsed_args):
 
             for i, hypos_i in enumerate(hypos):
                 hypo = hypos_i[0]
+                dk, dv = hypo['dstore_keys'], hypo['tokens']
                 if args.save_knnlm_dstore:
-                    shape = hypo['dstore_keys'].shape
-                    if shape[0] == args.tokens_per_sample:
-                        if dstore_idx + shape[0] > args.dstore_size:
-                            shape = [args.dstore_size - dstore_idx]
-                            hypo['dstore_keys'] = hypo['dstore_keys'][:shape[0]]
-                        if args.dstore_fp16:
-                            dstore_keys[dstore_idx:shape[0]+dstore_idx] = hypo['dstore_keys'].view(
-                                -1, args.decoder_embed_dim).cpu().numpy().astype(np.float16)
-                            dstore_vals[dstore_idx:shape[0]+dstore_idx] = hypo['tokens'].view(
-                                -1, 1).cpu().numpy().astype(np.int16)
-                        else:
-                            dstore_keys[dstore_idx:shape[0]+dstore_idx] = hypo['dstore_keys'].view(
-                                -1, args.decoder_embed_dim).cpu().numpy().astype(np.float32)
-                            dstore_vals[dstore_idx:shape[0]+dstore_idx] = hypo['tokens'].view(
-                                -1, 1).cpu().numpy().astype(np.int)
-
-                        dstore_idx += shape[0]
+                    num_to_add = dk.shape[0]
+                    end_idx = num_to_add+dstore_idx
+                    if num_to_add == args.tokens_per_sample:
+                        if end_idx > args.dstore_size:
+                            num_to_add = (args.dstore_size - dstore_idx) # however much left.
+                            print(f'Last obs: only have space to add {num_to_add}')
+                            dk = dk[:num_to_add]
+                            dv = dv[:num_to_add]
+                            end_idx = num_to_add+dstore_idx  # should be dstore_size
+                        dstore_keys[dstore_idx:end_idx] = dk.view(-1, args.decoder_embed_dim).cpu().numpy().astype(np_dtypes[0])
+                        dstore_vals[dstore_idx:end_idx] = dv.view(-1, 1).cpu().numpy().astype(np_dtypes[1])
+                        dstore_idx += num_to_add
                     else:
-                        print('Skipping this one with shape', shape)
+                        print('Skipping this one with shape', num_to_add)
 
                 sample_id = sample['id'][i]
 
@@ -221,14 +219,6 @@ def main(parsed_args):
                             skipped_toks += 1
                             pos_scores[i + 1] += pos_scores[i]
                             pos_scores[i] = 0
-
-                #inf_scores = pos_scores.eq(float('inf')) | pos_scores.eq(float('-inf'))
-                #if inf_scores.any():
-                #    logger.info(
-                #        'skipping tokens with inf scores:',
-                #        task.target_dictionary.string(tokens[inf_scores.nonzero()])
-                #    )
-                #    pos_scores = pos_scores[(~inf_scores).nonzero()]
                 score_sum += pos_scores.sum().cpu()
                 count += pos_scores.numel() - skipped_toks
 
@@ -268,7 +258,6 @@ def main(parsed_args):
         print(f'final dstore idx: {dstore_idx}')
 
     if args.save_knnlm_dstore:
-        print("dstore_idx", dstore_idx, "final shape", shape)
         print("Keys", dstore_keys.shape, dstore_keys.dtype)
         print("Vals", dstore_vals.shape, dstore_vals.dtype)
 

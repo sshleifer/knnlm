@@ -8,7 +8,7 @@ from fairseq.data import Dictionary
 #from durbango import *
 
 
-class KNN_Dstore(object):
+class KNN_Dstore:
     def __init__(self, args):
         self.half = args.fp16
         self.dimension = args.decoder_embed_dim

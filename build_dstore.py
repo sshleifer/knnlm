@@ -29,24 +29,8 @@ else:
     keys = np.memmap(args.dstore_mmap+'_keys.npy', dtype=np.float32, mode='r', shape=(args.dstore_size, args.dimension))
     vals = np.memmap(args.dstore_mmap+'_vals.npy', dtype=np.int, mode='r', shape=(args.dstore_size, 1))
 
-if not os.path.exists(args.faiss_index+".trained"):
-    # Initialize faiss index
-    quantizer = faiss.IndexFlatL2(args.dimension)
-    index = faiss.IndexIVFPQ(quantizer, args.dimension, args.ncentroids, args.code_size, 8)
-    index.nprobe = args.probe
+assert os.path.exists(args.faiss_index+".trained")
 
-    print('Training Index')
-    np.random.seed(args.seed)
-    random_sample = np.random.choice(np.arange(vals.shape[0]), size=[min(1000000, vals.shape[0])], replace=False)
-    start = time.time()
-    # Faiss does not handle adding keys in fp16 as of writing this.
-    index.train(keys[random_sample].astype(np.float32))
-    print('Training took {} s'.format(time.time() - start))
-
-    print('Writing index after training')
-    start = time.time()
-    faiss.write_index(index, args.faiss_index+".trained")
-    print('Writing index took {} s'.format(time.time()-start))
 
 print('Adding Keys')
 index = faiss.read_index(args.faiss_index+".trained")
