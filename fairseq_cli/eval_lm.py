@@ -19,7 +19,8 @@ from fairseq import checkpoint_utils, options, progress_bar, tasks, utils
 from fairseq.data import LMContextWindowDataset
 from fairseq.meters import StopwatchMeter, TimeMeter
 from fairseq.sequence_scorer import SequenceScorer
-from fairseq.knnlm import KNN_Dstore
+from fairseq.knnlm import KNN_Dstore, read_index
+import faiss
 
 
 logging.basicConfig(
@@ -121,7 +122,7 @@ def main(parsed_args):
         num_shards=args.num_shards,
         shard_id=args.shard_id,
         num_workers=args.num_workers,
-    ).next_epoch_itr(shuffle=False)
+    ).next_epoch_itr(shuffle=args.shuffle)
 
     gen_timer = StopwatchMeter()
     scorer = SequenceScorer(task.target_dictionary, args.softmax_batch, args=args)
@@ -151,27 +152,25 @@ def main(parsed_args):
 
     if args.knnlm:
         knn_dstore = KNN_Dstore(args)
-
+    if args.save_knnlm_dstore:
+        index = read_index(args.indexfile, gpu=False)
+    FLUSH_THRESH = 500000
     with progress_bar.build_progress_bar(args, itr) as t:
         wps_meter = TimeMeter()
 
         if args.save_knnlm_dstore:
             print('keytype being saved:', args.knn_keytype)
-            if args.dstore_fp16:
-                print('Saving fp16')
-                dstore_keys = np.memmap(args.dstore_mmap+'_keys.npy', dtype=np.float16, mode='w+', shape=(args.dstore_size, args.decoder_embed_dim))
-                dstore_vals = np.memmap(args.dstore_mmap+'_vals.npy', dtype=np.int16, mode='w+', shape=(args.dstore_size, 1))
-            else:
-                print('Saving fp32')
-                dstore_keys = np.memmap(args.dstore_mmap+'_keys.npy', dtype=np.float32, mode='w+', shape=(args.dstore_size, args.decoder_embed_dim))
-                dstore_vals = np.memmap(args.dstore_mmap+'_vals.npy', dtype=np.int, mode='w+', shape=(args.dstore_size, 1))
+            dstore_vals = np.memmap(args.dstore_mmap+'_vals.npy', dtype=np.int16, mode='w+', shape=(args.dstore_size, 1))
         np_dtypes = (np.float16, np.int16) if args.dstore_fp16 else (np.float32, np.int)
         dstore_idx = 0
+        buffer_k = []
+        last_buffer_idx = 0
         for ex_i, sample in enumerate(t):
             if 'net_input' not in sample:
                 continue
             elif args.save_knnlm_dstore and dstore_idx >= args.dstore_size:
                 break
+
 
             sample = utils.move_to_cuda(sample) if use_cuda else sample
 
@@ -195,11 +194,12 @@ def main(parsed_args):
                             dk = dk[:num_to_add]
                             dv = dv[:num_to_add]
                             end_idx = num_to_add+dstore_idx  # should be dstore_size
-                        keys_to_add = dk.view(-1, args.decoder_embed_dim).cpu().numpy().astype(np_dtypes[0])
-                        dstore_vals[dstore_idx:end_idx] = dv.view(-1, 1).cpu().numpy().astype(np_dtypes[1])
+                        buffer_k.append(dk.view(-1, args.decoder_embed_dim).cpu().numpy().astype(np.float32))
+                        #index.add_with_ids(keys_to_add, np.arange(dstore_idx, end_idx))
+                        dstore_vals[dstore_idx:end_idx] = dv.view(-1, 1).cpu().numpy().astype(np.int16)
                         dstore_idx += num_to_add
                     else:
-                        print('Skipping this one with shape', num_to_add)
+                        print(f'Skipping this one with shape: {dk.shape}')
 
                 sample_id = sample['id'][i]
 
@@ -222,7 +222,7 @@ def main(parsed_args):
                 score_sum += pos_scores.sum().cpu()
                 count += pos_scores.numel() - skipped_toks
 
-                if args.output_word_probs or args.output_word_stats:
+            if args.output_word_probs or args.output_word_stats:
                     w = ''
                     word_prob = []
                     is_bpe = False
@@ -251,16 +251,29 @@ def main(parsed_args):
                             str(int(sample_id)) + " "
                             + ('\t'.join('{} [{:2f}]'.format(x[0], x[1]) for x in word_prob))
                         )
+            if args.save_knnlm_dstore and (dstore_idx- last_buffer_idx) > FLUSH_THRESH:
+                print('FLUSH TIME')
+                #import ipdb; ipdb.set_trace()
+                keys_to_add = np.vstack(buffer_k)
+                ids = np.arange(last_buffer_idx, dstore_idx)
+                index.add_with_ids(keys_to_add, ids)
+                faiss.write_index(index, args.indexfile+'_populated')
+                last_buffer_idx = dstore_idx
+                buffer_k = []
+
 
             wps_meter.update(sample['ntokens'])
-            t.log({'wps': round(wps_meter.avg)})
-            print(f'dstore_idx:{dstore_idx}')
+            t.log({'wps': round(wps_meter.avg), 'dstore_idx': dstore_idx})
+            
         print(f'final dstore idx: {dstore_idx}')
 
     if args.save_knnlm_dstore:
         print("Keys", dstore_keys.shape, dstore_keys.dtype)
         print("Vals", dstore_vals.shape, dstore_vals.dtype)
-
+        keys_to_add = np.vstack(buffer_k)
+        ids = np.arange(last_buffer_idx, args.dstore_size)
+        index.add_with_ids(keys_to_add, ids)
+        faiss.write_index(index, args.indexfile+'_populated')
     avg_nll_loss = -score_sum / count / math.log(2)  # convert to base 2
     logger.info('Evaluated {} tokens in {:.1f}s ({:.2f} tokens/s)'.format(
         gen_timer.n, gen_timer.sum, 1. / gen_timer.avg
