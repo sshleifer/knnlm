@@ -492,6 +492,8 @@ def add_eval_lm_args(parser):
     group.add_argument('--dstore-mmap', default=None, type=str,
                        help='If saving knnlm dstore, save keys and values to this file')
     group.add_argument('--shuffle', action='store_true')
+    group.add_argument('--save-keys', action='store_true')
+    group.add_argument('--save-index', action='store_true')
     # fmt: on
 
 

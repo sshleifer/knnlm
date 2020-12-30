@@ -152,16 +152,19 @@ def main(parsed_args):
 
     if args.knnlm:
         knn_dstore = KNN_Dstore(args)
-    if args.save_knnlm_dstore:
+    if args.save_knnlm_dstore and args.save_index:
+        assert args.indexfile is not None
         index = read_index(args.indexfile, gpu=False)
-    FLUSH_THRESH = 500000
+    FLUSH_THRESH = 5000000
     with progress_bar.build_progress_bar(args, itr) as t:
         wps_meter = TimeMeter()
 
         if args.save_knnlm_dstore:
             print('keytype being saved:', args.knn_keytype)
-            dstore_vals = np.memmap(args.dstore_mmap+'_vals.npy', dtype=np.int16, mode='w+', shape=(args.dstore_size, 1))
-        np_dtypes = (np.float16, np.int16) if args.dstore_fp16 else (np.float32, np.int)
+            dstore_vals = np.memmap(args.dstore_mmap+'_vals.npy', dtype=np.int32, mode='w+', shape=(args.dstore_size, 1))
+            if args.save_keys:
+                dstore_keys =  np.memmap(args.dstore_mmap+'_keys.npy', dtype=np.float16, mode='w+', shape=(args.dstore_size, args.decoder_embed_dim))
+        #np_dtypes = (np.float16, np.int16) if args.dstore_fp16 else (np.float32, np.int)
         dstore_idx = 0
         buffer_k = []
         last_buffer_idx = 0
@@ -194,8 +197,12 @@ def main(parsed_args):
                             dk = dk[:num_to_add]
                             dv = dv[:num_to_add]
                             end_idx = num_to_add+dstore_idx  # should be dstore_size
-                        buffer_k.append(dk.view(-1, args.decoder_embed_dim).cpu().numpy().astype(np.float32))
+                        keys_to_add = dk.view(-1, args.decoder_embed_dim).cpu().numpy()
                         #index.add_with_ids(keys_to_add, np.arange(dstore_idx, end_idx))
+                        if args.save_keys:
+                            dstore_keys[dstore_idx:end_idx] = keys_to_add.astype(dstore_keys.dtype)
+                        if args.save_index:
+                            buffer_k.append(keys_to_add.astype(np.float32))
                         dstore_vals[dstore_idx:end_idx] = dv.view(-1, 1).cpu().numpy().astype(np.int16)
                         dstore_idx += num_to_add
                     else:
@@ -251,8 +258,7 @@ def main(parsed_args):
                             str(int(sample_id)) + " "
                             + ('\t'.join('{} [{:2f}]'.format(x[0], x[1]) for x in word_prob))
                         )
-            if args.save_knnlm_dstore and (dstore_idx- last_buffer_idx) > FLUSH_THRESH:
-                print('FLUSH TIME')
+            if args.save_index and (dstore_idx- last_buffer_idx) > FLUSH_THRESH:
                 #import ipdb; ipdb.set_trace()
                 keys_to_add = np.vstack(buffer_k)
                 ids = np.arange(last_buffer_idx, dstore_idx)
@@ -267,7 +273,7 @@ def main(parsed_args):
             
         print(f'final dstore idx: {dstore_idx}')
 
-    if args.save_knnlm_dstore:
+    if args.save_knnlm_dstore and args.save_index:
         print("Keys", dstore_keys.shape, dstore_keys.dtype)
         print("Vals", dstore_vals.shape, dstore_vals.dtype)
         keys_to_add = np.vstack(buffer_k)
@@ -285,7 +291,9 @@ def main(parsed_args):
     if args.output_word_stats:
         for ws in sorted(word_stats.values(), key=lambda x: x.count, reverse=True):
             logger.info(ws)
-
+    #if args.train_after:
+        #from train_faiss import train_faiss
+        #train_faiss()
 
 def cli_main():
     parser = options.get_eval_lm_parser()
