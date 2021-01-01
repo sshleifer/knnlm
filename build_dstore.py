@@ -36,14 +36,14 @@ class DimaServer:
         num_clients=1,
         save_dir="/checkpoint/sshleifer/faiss_idx",
         index_id="lang_en",
-        ncentroids=4096,
+        ncentroids=4096, # unused
         server_list_path='/private/home/sshleifer/distributed-faiss/discover.txt',
     ):
         self.index_id = index_id
         self.servers = []
         #ports = []
         self.clients = []
-        self.ncentroids = ncentroids
+        #self.ncentroids = ncentroids
         # TODO(SS): take discover file
         self.client = IndexClient(server_list_path)
         #self.client = RPC('lang_en', 'learnfair5222', port=12033)
