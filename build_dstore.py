@@ -37,6 +37,7 @@ class DimaServer:
         save_dir="/checkpoint/sshleifer/faiss_idx",
         index_id="lang_en",
         ncentroids=4096,
+        server_list_path='/private/home/sshleifer/distributed-faiss/discover.txt',
     ):
         self.index_id = index_id
         self.servers = []
@@ -44,7 +45,8 @@ class DimaServer:
         self.clients = []
         self.ncentroids = ncentroids
         # TODO(SS): take discover file
-        self.client = RPC('lang_en', 'learnfair5222', port=12033)
+        self.client = IndexClient(server_list_path)
+        #self.client = RPC('lang_en', 'learnfair5222', port=12033)
         self.port = 12033
         # self.config = {}
         # self.config["index_storage_dir"] = save_dir
@@ -101,21 +103,17 @@ class DimaServer:
             # single_client.add_index_data(index_id, embeddings, meta)
             # we added training data but did not start training yet
             # self.assertEqual(client.get_state(index_id), IndexState.NOT_TRAINED)
-            self.client.save_index()
+            #
             # if (
             #     self.servers[0].get_ntotal(self.index_id) > 2e6
             #     and client.get_state(self.index_id) == IndexState.NOT_TRAINED
             # ):
             #     client.sync_train(self.index_id)
 
-            # since_save += 1
-            # if since_save >= (500000 / batch_size):
-            #     since_save = 0
-            #     self.save_all()
-
-    def save_all(self):
-        # for client in self.cli
-        return self.clients[0].save_index(self.index_id)
+            since_save += 1
+            if since_save >= (1e7 / batch_size):
+                since_save = 0
+                self.client.save_index()
 
     def test_index_client_server(self):
         index_id = "lang_en"
@@ -218,6 +216,9 @@ parser.add_argument(
 parser.add_argument(
     "--start", default=0, type=int, help="index to start adding keys at"
 )
+parser.add_argument(
+    "--discover", type=str, help="serverlist_path",
+)
 args = parser.parse_args()
 
 print(args)
@@ -251,7 +252,7 @@ else:
 
 print("Adding Keys")
 #assert os.path.exists(args.trained_index)
-server = DimaServer(ncentroids=args.ncentroids)
+server = DimaServer(ncentroids=args.ncentroids, server_list_path=args.discover)
 start_time = time.time()
 server.add_vectors(
     keys,
