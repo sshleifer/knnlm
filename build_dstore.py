@@ -40,7 +40,7 @@ class DimaServer:
         server_list_path='/private/home/sshleifer/distributed-faiss/discover.txt',
     ):
         self.index_id = index_id
-        self.servers = []
+        #self.servers = []
         #ports = []
         self.clients = []
         #self.ncentroids = ncentroids
@@ -111,169 +111,93 @@ class DimaServer:
             #     client.sync_train(self.index_id)
 
             since_save += 1
-            if since_save >= (1e7 / batch_size):
+            if (since_save / self.client.num_indexes) >= (1e7 / batch_size):
                 since_save = 0
                 self.client.save_index()
 
-    def test_index_client_server(self):
-        index_id = "lang_en"
-        embded_dim = 512
-        num_docs_per_batch = 12800
-        num_docs_per_query = 16
-        num_batches = 4
-        topk_per_search = 5
-        meta_lenght = 5
-
-        cfg = IndexCfg()
-        cfg.dim = embded_dim
-        cfg.faiss_factory = "flat"
-
-        for client in self.clients:
-            client.create_index(index_id, cfg)
-            self.assertEqual(client.get_state(index_id), IndexState.NOT_TRAINED)
-            for i in range(num_batches):
-                embeddings = torch.rand(num_docs_per_batch, embded_dim).numpy()
-                meta = [
-                    "".join(
-                        random.choices(
-                            string.ascii_uppercase + string.digits, k=meta_lenght
-                        )
-                    )
-                    for doc in range(num_docs_per_batch)
-                ]
-                client.add_index_data(index_id, embeddings, meta)
-            # we added training data but did not start training yet
-            self.assertEqual(client.get_state(index_id), IndexState.NOT_TRAINED)
-
-        self.clients[0].sync_train(index_id)
-        for client in self.clients:
-            for i in range(num_batches):
-                embeddings = torch.rand(num_docs_per_batch, embded_dim).numpy()
-                meta = [
-                    "".join(
-                        random.choices(
-                            string.ascii_uppercase + string.digits, k=meta_lenght
-                        )
-                    )
-                    for doc in range(num_docs_per_batch)
-                ]
-                client.add_index_data(index_id, embeddings, meta)
-        for server in self.servers:
-            # Make sure that data is ballanced among servers
-            self.assertEqual(
-                server.get_ntotal(index_id),
-                2
-                * num_batches
-                * num_docs_per_batch
-                * len(self.clients)
-                / len(self.servers),
-            )
-        for client in self.clients:
-            self.assertEqual(client.get_state(index_id), IndexState.TRAINED)
-            self.assertEqual(
-                client.get_ntotal(index_id),
-                2 * num_batches * num_docs_per_batch * len(self.clients),
-            )
-            self.assertEqual(client.get_ntotal("wrong_id"), 0)
-            query = torch.rand(num_docs_per_query, embded_dim).numpy()
-            scores, meta = client.search(query, topk_per_search, index_id)
-            self.assertEqual((num_docs_per_query, topk_per_search), scores.shape)
-            self.assertEqual(num_docs_per_query, len(meta))
-            self.assertEqual(topk_per_search, len(meta[0]))
-
-        self.clients[0].save_index(index_id)
-        self.clients[0].drop_index(index_id)
-        for client in self.clients:
-            self.assertEqual(client.get_ntotal(index_id), 0)
+def get_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--dstore-mmap", type=str, help="memmap where keys and vals are stored"
+    )
+    parser.add_argument(
+        "--dstore-size", type=int, help="number of items saved in the datastore memmap"
+    )
+    parser.add_argument("--dimension", type=int, default=1024, help="Size of each key")
+    parser.add_argument("--dstore-fp16", default=False, action="store_true")
+    # parser.add_argument('--seed', type=int, default=1, help='random seed for sampling the subset of vectors to train the cache')
+    parser.add_argument(
+        "--ncentroids",
+        type=int,
+        default=4096,
+        help="number of centroids faiss should learn",
+    )
+    # parser.add_argument('--code-size', type=int, default=64, help='size of quantized vectors')
+    # parser.add_argument('--probe', type=int, default=8, help='number of clusters to query')
+    # parser.add_argument('--trained-index', type=str, help='file to write the faiss index')
+    # parser.add_argument('--save-path', type=str, help='file to write the faiss index')
+    parser.add_argument(
+        "--bs",
+        default=1000,
+        type=int,
+        help="can only load a certain amount of data to memory at a time.",
+    )
+    parser.add_argument(
+        "--start", default=0, type=int, help="index to start adding keys at"
+    )
+    parser.add_argument(
+        "--discover", type=str, help="serverlist_path",
+    )
+    args = parser.parse_args()
+    return args
+def main():
+    args = get_args()
+    server = DimaServer(ncentroids=args.ncentroids, server_list_path=args.discover)
+    rand_vec = torch.rand((1024,))
+    start_time = time.time()
+    server.client.sync_train()
+    result = server.client.search(rand_vec, 3, server.index_id)
+    import ipdb; ipdb.set_trace()
 
 
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--dstore-mmap", type=str, help="memmap where keys and vals are stored"
-)
-parser.add_argument(
-    "--dstore-size", type=int, help="number of items saved in the datastore memmap"
-)
-parser.add_argument("--dimension", type=int, default=1024, help="Size of each key")
-parser.add_argument("--dstore-fp16", default=False, action="store_true")
-# parser.add_argument('--seed', type=int, default=1, help='random seed for sampling the subset of vectors to train the cache')
-parser.add_argument(
-    "--ncentroids",
-    type=int,
-    default=4096,
-    help="number of centroids faiss should learn",
-)
-# parser.add_argument('--code-size', type=int, default=64, help='size of quantized vectors')
-# parser.add_argument('--probe', type=int, default=8, help='number of clusters to query')
-# parser.add_argument('--trained-index', type=str, help='file to write the faiss index')
-# parser.add_argument('--save-path', type=str, help='file to write the faiss index')
-parser.add_argument(
-    "--bs",
-    default=1000,
-    type=int,
-    help="can only load a certain amount of data to memory at a time.",
-)
-parser.add_argument(
-    "--start", default=0, type=int, help="index to start adding keys at"
-)
-parser.add_argument(
-    "--discover", type=str, help="serverlist_path",
-)
-args = parser.parse_args()
-
-print(args)
-
-if args.dstore_fp16:
     keys = np.memmap(
         args.dstore_mmap + "_keys.npy",
-        dtype=np.float16,
+        dtype=np.float16 if args.dstore_fp16 else np.float32,
         mode="r",
         shape=(args.dstore_size, args.dimension),
     )
-    vals = np.memmap(
-        args.dstore_mmap + "_vals.npy",
-        dtype=np.int16,
-        mode="r",
-        shape=(args.dstore_size, 1),
-    )
-else:
-    keys = np.memmap(
-        args.dstore_mmap + "_keys.npy",
-        dtype=np.float32,
-        mode="r",
-        shape=(args.dstore_size, args.dimension),
-    )
-    vals = np.memmap(
-        args.dstore_mmap + "_vals.npy",
-        dtype=np.int,
-        mode="r",
-        shape=(args.dstore_size, 1),
-    )
 
-print("Adding Keys")
-#assert os.path.exists(args.trained_index)
-server = DimaServer(ncentroids=args.ncentroids, server_list_path=args.discover)
-start_time = time.time()
-server.add_vectors(
-    keys,
-    np.arange(
-        args.start,
-        args.dstore_size,
-    ),
-    batch_size=args.bs,
-)
-# for i in tqdm(range(args.start, args.dstore_size, args.nk)):
-#     end = min(args.dstore_size, i+args.nk)
-#     to_add = keys[i:end].copy()
-#     ids = np.arange(i, end)
-#     server.add_vectors(to_add, ids)
-# break
-# index.add_with_ids(to_add.astype(np.float32), )
-# faiss.write_index(index, args.save_path)
+    print("Adding Keys")
+    #assert os.path.exists(args.trained_index)
+    #server = DimaServer(ncentroids=args.ncentroids, server_list_path=args.discover)
+    #rand_vec = torch.rand((1024,))
+    #start_time = time.time()
+    #result = server.client.search(rand_vec, 3, server.index_id)
 
-print("Adding total %d keys" % i)
-print("Adding took {} s".format(time.time() - start_time))
-print("Writing Index")
-i = time.time()
-# faiss.write_index(index, args.save_path)
-print("Writing index took {} s".format(time.time() - i))
+    server.add_vectors(
+        keys,
+        np.arange(
+            args.start,
+            args.dstore_size,
+        ),
+        batch_size=args.bs,
+    )
+    # for i in tqdm(range(args.start, args.dstore_size, args.nk)):
+    #     end = min(args.dstore_size, i+args.nk)
+    #     to_add = keys[i:end].copy()
+    #     ids = np.arange(i, end)
+    #     server.add_vectors(to_add, ids)
+    # break
+    # index.add_with_ids(to_add.astype(np.float32), )
+    # faiss.write_index(index, args.save_path)
+
+    print("Adding total %d keys" % i)
+    print("Adding took {} s".format(time.time() - start_time))
+    print("Writing Index")
+    i = time.time()
+    # faiss.write_index(index, args.save_path)
+    print("Writing index took {} s".format(time.time() - i))
+
+
+if __name__ == '__main__':
+    main()
