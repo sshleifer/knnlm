@@ -31,45 +31,12 @@ from distributed_faiss.rpc import Client as RPC
 class DimaServer:
     def __init__(
         self,
-        path="dima.cfg",
-        num_servers=4,
-        num_clients=1,
-        save_dir="/checkpoint/sshleifer/faiss_idx",
         index_id="lang_en",
-        ncentroids=4096, # unused
         server_list_path='/private/home/sshleifer/distributed-faiss/discover.txt',
     ):
         self.index_id = index_id
-        #self.servers = []
-        #ports = []
-        self.clients = []
-        #self.ncentroids = ncentroids
-        # TODO(SS): take discover file
         self.client = IndexClient(server_list_path)
-        #self.client = RPC('lang_en', 'learnfair5222', port=12033)
         self.port = 12033
-        # self.config = {}
-        # self.config["index_storage_dir"] = save_dir
-        # Path(save_dir).mkdir(exist_ok=True)
-
-        # random.seed(0)
-        # for i in range(num_servers):
-        #     port = random.randint(1234, 12345)
-        #     server = IndexServer(i, self.config)
-        #     _thread.start_new_thread(server.start_blocking, (port,))
-        #     self.servers.append(server)
-        #     ports.append(port)
-
-        # if True:  # not os.path.exists(path):
-        #     with open(path, "wb") as fp:
-        #         fp.write(f"{num_servers}\n".encode())
-        #         for i in range(num_servers):
-        #             fp.write(f"localhost,{ports[i]}\n".encode())
-        #         fp.seek(0)
-
-        # for i in range(num_clients):
-        #     client = IndexClient(path)
-        #     self.clients.append(client)
 
     def tearDown(self):
         [c.close() for c in self.clients]
@@ -77,43 +44,35 @@ class DimaServer:
         print("Done tearing down")
 
     def add_vectors(
-        self, embeddings, ids, embed_dim=1024, client_id=0, batch_size=1000
+        self, embeddings, ids, batch_size=1000
     ):
-        # start single flat index as souce of truth
-        #port = 12345
-        # single_server = IndexServer(0, self.config)
-        # _thread.start_new_thread(single_server.start_blocking, (port,))
-        #cfg = IndexCfg()
-        #cfg.dim = embed_dim
-        #cfg.ncentroids = 32768
-        #cfg.faiss_factory = "flat"
-        # single_client = IndexClient(fp.name)
-        # single_client.create_index(index_id, cfg)
-        # self.assertEqual(single_client.get_state(index_id), IndexState.NOT_TRAINED)
-
-        #client = self.clients[client_id]
-        #self.client.create_index(self.index_id, cfg)
-        # self.assertEqual(client.get_state(index_id), IndexState.NOT_TRAINED)
         num_vec = embeddings.shape[0]
         since_save = 0
         for i in tqdm(list(range(0, num_vec, batch_size))):
             end = min(i + batch_size, num_vec)
-            emb, id = embeddings[i:end].copy(), ids[i:end]
+            emb, id = embeddings[i:end].copy().astype(np.float32), ids[i:end]
             self.client.add_train_data(self.index_id, emb, id.tolist())
             # single_client.add_index_data(index_id, embeddings, meta)
             # we added training data but did not start training yet
             # self.assertEqual(client.get_state(index_id), IndexState.NOT_TRAINED)
             #
-            # if (
-            #     self.servers[0].get_ntotal(self.index_id) > 2e6
-            #     and client.get_state(self.index_id) == IndexState.NOT_TRAINED
-            # ):
-            #     client.sync_train(self.index_id)
+            if (
+                self.client.get_ntotal(self.index_id) > 1e6
+                and self.client.get_state(self.index_id) == IndexState.NOT_TRAINED
+            ):
+                print(f'Training')
+                self.client.sync_train(self.index_id)
 
             since_save += 1
             if (since_save / self.client.num_indexes) >= (1e7 / batch_size):
                 since_save = 0
                 self.client.save_index()
+
+        if self.client.get_state() == IndexState.NOT_TRAINED:
+            self.client.sync_train()
+        self.client.save_index()
+        print(f'ntotal: {self.client.get_ntotal(self.index_id)}')
+
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -150,14 +109,15 @@ def get_args():
     )
     args = parser.parse_args()
     return args
+
 def main():
     args = get_args()
-    server = DimaServer(ncentroids=args.ncentroids, server_list_path=args.discover)
-    rand_vec = torch.rand((1024,))
+    server = DimaServer(server_list_path=args.discover)
+    #rand_vec = torch.rand((1024,))
     start_time = time.time()
-    server.client.sync_train()
-    result = server.client.search(rand_vec, 3, server.index_id)
-    import ipdb; ipdb.set_trace()
+    #server.client.sync_train()
+    #result = server.client.search(rand_vec, 3, server.index_id)
+    #import ipdb; ipdb.set_trace()
 
 
     keys = np.memmap(
@@ -191,12 +151,12 @@ def main():
     # index.add_with_ids(to_add.astype(np.float32), )
     # faiss.write_index(index, args.save_path)
 
-    print("Adding total %d keys" % i)
+    #print("Adding total %d keys" % i)
     print("Adding took {} s".format(time.time() - start_time))
     print("Writing Index")
     i = time.time()
     # faiss.write_index(index, args.save_path)
-    print("Writing index took {} s".format(time.time() - i))
+    #print("Writing index took {} s".format(time.time() - i))
 
 
 if __name__ == '__main__':
