@@ -196,6 +196,9 @@ def main(parsed_args):
             elif args.save_knnlm_dstore and dstore_idx >= args.dstore_size:
                 break
 
+            elif ex_i >= args.n_batch:
+                break
+
             sample = utils.move_to_cuda(sample) if use_cuda else sample
 
             gen_timer.start()

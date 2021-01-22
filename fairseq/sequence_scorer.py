@@ -3,6 +3,7 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
+from fairseq.knnlm import KNN_Dstore
 import torch
 import sys
 import numpy as np
@@ -97,7 +98,7 @@ class SequenceScorer(object):
 
             probs = probs.view(sample["target"].shape)
             if "knn_dstore" in kwargs:
-                dstore = kwargs["knn_dstore"]
+                dstore: KNN_Dstore = kwargs["knn_dstore"]
                 # TxBxC
                 queries = bd[1][self.args.knn_keytype]
                 if len(models) != 1:

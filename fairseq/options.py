@@ -468,7 +468,7 @@ def add_common_eval_args(group):
                        help='path to save eval results (optional)"')
     # fmt: on
 
-
+import math
 def add_eval_lm_args(parser):
     group = parser.add_argument_group("LM Evaluation")
     add_common_eval_args(group)
@@ -494,6 +494,7 @@ def add_eval_lm_args(parser):
     group.add_argument('--shuffle', action='store_true')
     group.add_argument('--save-keys', action='store_true')
     group.add_argument('--save-index', action='store_true')
+    group.add_argument('--n-batch', type=int, default=math.inf)
     # fmt: on
 
 
