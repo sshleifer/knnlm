@@ -22,11 +22,15 @@ class DimaServer:
         self,
         server_list_path,
         index_id="lang_en",
-        load_index=True,
+        load_index=False,
+        idx_cfg_path=None,
     ):
         self.index_id = index_id
         self.client = IndexClient(server_list_path)
-        self.cfg = IndexCfg(metric='l2', faiss_factory="IVF{centroids},PQ32")
+        if idx_cfg_path is not None:
+            self.cfg = IndexCfg.from_json(idx_cfg_path)
+        else:
+            self.cfg = IndexCfg(metric='l2', faiss_factory="IVF{centroids},PQ32")
         if not load_index:
             self.client.create_index(self.index_id, self.cfg)
         else:
@@ -59,11 +63,10 @@ class DimaServer:
 
 def index_data(
     serverlist_path, mmap_file, dstore_size, d, 
-    dstore_fp16=True, load_index=False, start=0,
-    bs=1000):
-    c= DimaServer(serverlist_path, load_index=load_index)
+    dstore_fp16=True, load_index=False, start=0, bs=1000, cfg=None):
+    c= DimaServer(serverlist_path, load_index=load_index, idx_cfg_path=cfg)
     k = np.memmap(mmap_file, shape=(dstore_size, d), mode='r', dtype=np.float16 if dstore_fp16 else np.float32)
-    c.add_vectors( k, np.arange(start, dstore_size), bs=bs)
+    c.add_vectors(k, np.arange(start, dstore_size), bs=bs)
     # Check search results
     d, i = c.search(torch.rand((1, d)).numpy(), k=4)
     assert d.shape == (1,4)

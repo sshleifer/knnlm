@@ -29,6 +29,8 @@ def time_index_stuff():
 
 DEFAULT_INDEX_DIR = '~/knnlm/myle_355/sub_idx/'
 
+def cnone(lst): return sum(x is None for x in lst)
+def count_nones(knns): return cnone(itertools.chain.from_iterable(knns))
 class MultiFaiss:
 
     def __init__(self, index_dir=DEFAULT_INDEX_DIR, n=4):
@@ -91,7 +93,7 @@ class KNN_Dstore:
             index.nprobe = args.probe
         else:
             index = DimaServer(args.indexfile)
-            index.client.set_nprobe(args.nprobe)
+            index.client.set_nprobe(index.index_id, 32)
             
         self.index = index
 
@@ -137,6 +139,8 @@ class KNN_Dstore:
         dists, knns = self.index.search(qn, self.k)
         fac = np.linalg.norm(qcast, ord=2)
         dists1, knns1 = self.index.search(qn/fac, self.k)
+        print(f'number of Nones: {count_nones(knns)}')
+        #import ipdb; ipdb.set_trace()
         # assert dists.max() < 1e6, 'Huge distance returned.'
         return dists, knns
 
@@ -182,7 +186,7 @@ class KNN_Dstore:
         dists = dist_func(dists, knns, queries[tgt != pad_idx, :], function=self.sim_func)
         probs = utils.log_softmax(dists, dim=-1)
         # Probs
-
+        
         vals = torch.from_numpy(self.vals[knns]).long().cuda().squeeze(-1)
         val_eq_tgt_mask = torch.eq(vals, tgt[tgt != pad_idx].unsqueeze(-1)).float()
         val_eq_tgt_mask[val_eq_tgt_mask == 0] = -10000 # for stability

@@ -60,7 +60,7 @@ def train_faiss(args):
     #assert not os.path.exists(save_path)
     quantizer = faiss.IndexFlatL2(args.dimension)
     index = faiss.IndexIVFPQ(quantizer, args.dimension, args.ncentroids, args.code_size, 8)
-    index.nprobe = args.probe
+    
     if args.gpu:
         index = move_index_gpu(index, fp16=True)
 
