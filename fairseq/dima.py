@@ -47,8 +47,8 @@ class DimaServer:
             since_save += 1
             if (since_save / self.client.num_indexes) >= (1e7 / bs):
                 since_save = 0
-                self.client.save_index()
-        self.client.save_index(self.index_id)
+                self.client.save_index(self.index_id)
+
         print(f'ntotal: {self.client.get_ntotal(self.index_id)}')
         if self.client.get_state(self.index_id) == IndexState.NOT_TRAINED:
             print(f'Calling sync_train')
@@ -58,6 +58,7 @@ class DimaServer:
             print(f'current state: {self.client.get_state(self.index_id)}')
             time.sleep(10)
         self.search(torch.rand((1, D)).numpy())  # Sanity Check
+        self.client.save_index(self.index_id)
 
 
     def search(self, query, k=4):
