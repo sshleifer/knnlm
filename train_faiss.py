@@ -61,7 +61,8 @@ def train_faiss(args):
     if args.ncentroids == 0:
         args.ncentroids = Index.infer_n_centroids(keys.shape[0])
         print(f'Inferred {args.ncentroids:,} centroids')
-    #assert not os.path.exists(save_path)
+
+
     if args.faiss_factory is None:
         quantizer = faiss.IndexFlatL2(args.dimension)
         index = faiss.IndexIVFPQ(quantizer, args.dimension, args.ncentroids, args.code_size, 8)
