@@ -3,6 +3,8 @@ import os
 import numpy as np
 import faiss
 import time
+from tqdm import tqdm
+from distributed_faiss.index import Index
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -13,11 +15,12 @@ def get_args():
     parser.add_argument('--seed', type=int, default=1, help='random seed for sampling the subset of vectors to train the cache')
 
     parser.add_argument('--ntrain', type=int, default=int(1e6), help='number of data points faiss should use to learn centroids.')
-    parser.add_argument('--ncentroids', type=int, default=4096, help='number of centroids faiss should learn')
+    parser.add_argument('--ncentroids', type=int, default=0, help='number of centroids faiss should learn')
     parser.add_argument('--code-size', type=int, default=64, help='size of quantized vectors')
     parser.add_argument('--probe', type=int, default=32, help='number of clusters to query')
     parser.add_argument('--save-path', type=str, help='file to write the faiss index')
     parser.add_argument('--gpu', action='store_true')
+    parser.add_argument('--faiss-factory', type=str, default=None)
     # parser.add_argument('--num_keys_to_add_at_a_time', default=1000000, type=int,
     #                     help='can only load a certain amount of data to memory at a time.')
     #parser.add_argument('--starting_point', type=int, help='index to start adding keys at')
@@ -37,7 +40,7 @@ def move_index_gpu(index, fp16=True):
     index = faiss.index_cpu_to_gpu(res, 0, index, co)
     return index
 
-from tqdm import tqdm
+
 def add_keys(index, keys, save_path, stop=None, start=0, nk=500000):
     if stop is None:
         stop = len(keys)
@@ -47,7 +50,6 @@ def add_keys(index, keys, save_path, stop=None, start=0, nk=500000):
         index.add_with_ids(to_add.astype(np.float32), np.arange(i, end))
         faiss.write_index(index, save_path)
 
-
 def train_faiss(args):
     # Initialize faiss index
     if args.dstore_fp16:
@@ -56,9 +58,20 @@ def train_faiss(args):
     else:
         keys = np.memmap(args.dstore_mmap+'_keys.npy', dtype=np.float32, mode='r', shape=(args.dstore_size, args.dimension))
     save_path = args.save_path
+    if args.ncentroids == 0:
+        args.ncentroids = Index.infer_n_centroids(keys.shape[0])
+        print(f'Inferred {args.ncentroids:,} centroids')
     #assert not os.path.exists(save_path)
-    quantizer = faiss.IndexFlatL2(args.dimension)
-    index = faiss.IndexIVFPQ(quantizer, args.dimension, args.ncentroids, args.code_size, 8)
+    if args.faiss_factory is None:
+        quantizer = faiss.IndexFlatL2(args.dimension)
+        index = faiss.IndexIVFPQ(quantizer, args.dimension, args.ncentroids, args.code_size, 8)
+    elif args.faiss_factory == 'flat':
+        quantizer = faiss.IndexFlatL2(args.dimension)
+        index = faiss.IndexIVFFlat(quantizer, args.dimension, args.ncentroids, faiss.METRIC_L2)
+    else:
+        raise ValueError(f'invalid faiss_factory: {args.faiss_factory}')
+
+
     
     if args.gpu:
         index = move_index_gpu(index, fp16=True)
