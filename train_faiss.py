@@ -26,16 +26,16 @@ def get_args():
 
 
 def move_index_gpu(index, fp16=True):
-        res = faiss.StandardGpuResources()  # use a single GPU
-        co = faiss.GpuClonerOptions()
-        if fp16:
-            co.useFloat16 = True
-            co.useFloat16LookupTables = True
+    res = faiss.StandardGpuResources()  # use a single GPU
+    co = faiss.GpuClonerOptions()
+    if fp16:
+        co.useFloat16 = True
+        co.useFloat16LookupTables = True
 
-        #index = faiss.read_index(args.indexfile, faiss.IO_FLAG_ONDISK_SAME_DIR)
-        # faiss.index_cpu_to_all_gpus
-        index = faiss.index_cpu_to_gpu(res, 0, index, co)
-        return index
+    #index = faiss.read_index(args.indexfile, faiss.IO_FLAG_ONDISK_SAME_DIR)
+    # faiss.index_cpu_to_all_gpus
+    index = faiss.index_cpu_to_gpu(res, 0, index, co)
+    return index
 
 from tqdm import tqdm
 def add_keys(index, keys, save_path, stop=None, start=0, nk=500000):
@@ -55,7 +55,6 @@ def train_faiss(args):
         # vals = np.memmap(args.dstore_mmap+'_vals.npy', dtype=np.int16, mode='r', shape=(args.dstore_size, 1))
     else:
         keys = np.memmap(args.dstore_mmap+'_keys.npy', dtype=np.float32, mode='r', shape=(args.dstore_size, args.dimension))
-        # vals = np.memmap(args.dstore_mmap+'_vals.npy', dtype=np.int, mode='r', shape=(args.dstore_size, 1))
     save_path = args.save_path
     #assert not os.path.exists(save_path)
     quantizer = faiss.IndexFlatL2(args.dimension)

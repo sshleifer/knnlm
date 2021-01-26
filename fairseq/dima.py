@@ -37,14 +37,12 @@ class DimaServer:
             self.client.load_index(self.index_id, self.cfg)
 
     def add_vectors(self, embeddings, ids, bs=1000) -> None:
-        num_vec = embeddings.shape[0]
+        num_vec, D = embeddings.shape
         since_save = 0
         for i in tqdm(list(range(0, num_vec, bs))):
             end = min(i + bs, num_vec)
             emb, id = embeddings[i:end].copy().astype(np.float32), ids[i:end]
             self.client.add_index_data(self.index_id, emb, id.tolist())
-            while self.client.get_state(self.index_id) == IndexState.TRAINING:
-                time.sleep(1)
 
             since_save += 1
             if (since_save / self.client.num_indexes) >= (1e7 / bs):
@@ -55,7 +53,7 @@ class DimaServer:
             self.client.sync_train(self.index_id)
         while self.client.get_state(self.index_id) != IndexState.TRAINED:
             time.sleep(10)
-        self.search(torch.rand((1, 768)).numpy()) # Sanity Check
+        self.search(torch.rand((1, D)).numpy())  # Sanity Check
         print(f'ntotal: {self.client.get_ntotal(self.index_id)}')
 
     def search(self, query, k=4):
