@@ -21,7 +21,7 @@ from fairseq.meters import StopwatchMeter, TimeMeter
 from fairseq.sequence_scorer import SequenceScorer
 from fairseq.knnlm import KNN_Dstore, read_index
 import faiss
-
+from durbango.filesystem import read_pickle, write_pickle
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -81,6 +81,7 @@ def main(parsed_args):
         arg_overrides=eval(parsed_args.model_overrides),
         task=task,
     )
+
 
     for arg in vars(parsed_args).keys():
         if arg not in {
@@ -179,6 +180,8 @@ def main(parsed_args):
                 mode="w+",
                 shape=(args.dstore_size, 1),
             )
+
+            ids_list = read_pickle(args.ids_list_path) if args.ids_list_path is not None else None
             if args.save_keys:
                 dstore_keys = np.memmap(
                     args.dstore_mmap + "_keys.npy",
@@ -191,6 +194,8 @@ def main(parsed_args):
         buffer_k = []
         last_buffer_idx = 0
         for ex_i, sample in enumerate(t):
+            if ids_list is not None ex_i not in ids_list:
+                continue
             if "net_input" not in sample:
                 continue
             elif args.save_knnlm_dstore and dstore_idx >= args.dstore_size:
