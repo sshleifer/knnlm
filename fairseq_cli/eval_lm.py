@@ -169,12 +169,12 @@ def main(parsed_args):
         assert args.indexfile is not None
         index = read_index(args.indexfile, gpu=False)
     FLUSH_THRESH = 5000000
-    if args.ids_list_path is not None:
-        ids_list = read_pickle(args.ids_list_path)
-        dstore_size = len(ids_list)
+    if args.id_list_path is not None:
+        id_list = read_pickle(args.id_list_path)
+        dstore_size = len(id_list)
     else:
         dstore_size = args.dstore_size
-        ids_list = None
+        id_list = None
 
     with progress_bar.build_progress_bar(args, itr) as t:
         wps_meter = TimeMeter()
@@ -205,7 +205,7 @@ def main(parsed_args):
         buffer_k = []
         last_buffer_idx = 0
         for ex_i, sample in enumerate(t):
-            if ids_list is not None and ex_i not in ids_list:
+            if id_list is not None and ex_i not in id_list:
                 continue
             if "net_input" not in sample:
                 continue
