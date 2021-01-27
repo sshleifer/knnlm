@@ -495,7 +495,7 @@ def add_eval_lm_args(parser):
     group.add_argument('--save-keys', action='store_true')
     group.add_argument('--save-index', action='store_true')
     group.add_argument('--n-batch', type=int, default=math.inf)
-    group.add_argument('--ids-list-path', type=str, default=None)
+    group.add_argument('--id-list-path', type=str, default=None)
     # fmt: on
 
 
