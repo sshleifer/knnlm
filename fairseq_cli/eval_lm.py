@@ -169,11 +169,22 @@ def main(parsed_args):
         assert args.indexfile is not None
         index = read_index(args.indexfile, gpu=False)
     FLUSH_THRESH = 5000000
+    if args.ids_list_path is not None:
+        ids_list = read_pickle(args.ids_list_path)
+        dstore_size = len(ids_list)
+    else:
+        dstore_size = args.dstore_size
+        ids_list = None
+
     with progress_bar.build_progress_bar(args, itr) as t:
         wps_meter = TimeMeter()
 
+
         if args.save_knnlm_dstore:
             print("keytype being saved:", args.knn_keytype)
+
+
+
             dstore_vals = np.memmap(
                 args.dstore_mmap + "_vals.npy",
                 dtype=np.int16,
@@ -181,24 +192,24 @@ def main(parsed_args):
                 shape=(args.dstore_size, 1),
             )
 
-            ids_list = read_pickle(args.ids_list_path) if args.ids_list_path is not None else None
+
             if args.save_keys:
                 dstore_keys = np.memmap(
                     args.dstore_mmap + "_keys.npy",
                     dtype=np.float16,
                     mode="w+",
-                    shape=(args.dstore_size, args.decoder_embed_dim),
+                    shape=(dstore_size, args.decoder_embed_dim),
                 )
         # np_dtypes = (np.float16, np.int16) if args.dstore_fp16 else (np.float32, np.int)
         dstore_idx = 0
         buffer_k = []
         last_buffer_idx = 0
         for ex_i, sample in enumerate(t):
-            if ids_list is not None ex_i not in ids_list:
+            if ids_list is not None and ex_i not in ids_list:
                 continue
             if "net_input" not in sample:
                 continue
-            elif args.save_knnlm_dstore and dstore_idx >= args.dstore_size:
+            elif args.save_knnlm_dstore and dstore_idx >= dstore_size:
                 break
 
             elif ex_i >= args.n_batch:
@@ -220,9 +231,9 @@ def main(parsed_args):
                     num_to_add = dk.shape[0]
                     end_idx = num_to_add + dstore_idx
                     if num_to_add == args.tokens_per_sample:
-                        if end_idx > args.dstore_size:
+                        if end_idx > dstore_size:
                             num_to_add = (
-                                args.dstore_size - dstore_idx
+                                dstore_size - dstore_idx
                             )  # however much left.
                             print(f"Last obs: only have space to add {num_to_add}")
                             dk = dk[:num_to_add]
@@ -318,7 +329,7 @@ def main(parsed_args):
         print("Keys", dstore_keys.shape, dstore_keys.dtype)
         print("Vals", dstore_vals.shape, dstore_vals.dtype)
         keys_to_add = np.vstack(buffer_k)
-        ids = np.arange(last_buffer_idx, args.dstore_size)
+        ids = np.arange(last_buffer_idx, dstore_size)
         index.add_with_ids(keys_to_add, ids)
         faiss.write_index(index, args.indexfile + "_populated")
     avg_nll_loss = -score_sum / count / math.log(2)  # convert to base 2
