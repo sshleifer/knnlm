@@ -175,7 +175,7 @@ def main(parsed_args):
             print("keytype being saved:", args.knn_keytype)
             dstore_vals = np.memmap(
                 args.dstore_mmap + "_vals.npy",
-                dtype=np.int32,
+                dtype=np.int16,
                 mode="w+",
                 shape=(args.dstore_size, 1),
             )

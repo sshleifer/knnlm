@@ -42,6 +42,10 @@ class DimaServer:
         for i in tqdm(list(range(0, num_vec, bs))):
             end = min(i + bs, num_vec)
             emb, id = embeddings[i:end].copy().astype(np.float32), ids[i:end]
+            if emb.sum(1).sum() == 0:
+                print(f'encountered zeroes at {i}')
+                return
+
             self.client.add_index_data(self.index_id, emb, id.tolist())
 
             since_save += 1
@@ -67,7 +71,7 @@ class DimaServer:
 def index_data(
     serverlist_path, mmap_file, dstore_size, d, 
     dstore_fp16=True, load_index=False, start=0, bs=1000, cfg=None):
-    c= DimaServer(serverlist_path, load_index=load_index, idx_cfg_path=cfg)
+    c = DimaServer(serverlist_path, load_index=load_index, idx_cfg_path=cfg)
     k = np.memmap(mmap_file, shape=(dstore_size, d), mode='r', dtype=np.float16 if dstore_fp16 else np.float32)
     c.add_vectors(k, np.arange(start, dstore_size), bs=bs)
     # Check search results
@@ -75,6 +79,20 @@ def index_data(
     assert d.shape == (1,4)
     assert (len(i), len(i[0])) == d.shape
     assert all(x is not None for x in i[0]), 'Found neighbors with None'
+
+
+def chunk_vectors(embeddings,num_vec, bs=10000):
+    all_zero = []
+    non_zero = []
+    non_zero_indices = []
+    for i in tqdm(list(range(0, num_vec, bs))):
+        end = min(i + bs, num_vec)
+        emb = embeddings[i:end].copy()
+        if emb.sum(1).sum() == 0:
+            continue
+        else:
+            non_zero.append(emb)
+            non_zero_indices.append(i)
 
 if __name__ == '__main__':
     Fire(index_data)
